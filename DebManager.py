@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # encoding: utf-8
 
-import pprint
 import apt.debfile
 import apt_pkg
 import argparse
@@ -27,7 +26,7 @@ def sort_file_list(file_list):
         index_min = i
         k = 0
 
-        for j in range(i,len(file_list_tmp)):
+        for j in range(i, len(file_list_tmp)):
             l = cmp_deb_version(file_list_tmp[index_min], file_list_tmp[j])
             if l < k:
                 index_min = file_list_tmp.index(file_list_tmp[j])
@@ -119,6 +118,7 @@ def check_if_newer(package, package_list):
 
     return latest_package
 
+
 def check_and_remove(package_list, cache):
     working_set = set(package_list)
     for package in working_set:
@@ -164,15 +164,15 @@ def build_package_list(cache):
                 if candidate.name == dependency[0][0]:
                     if dependency[0][2] == '=':
                         if apt_pkg.version_compare(candidate.version, dependency[0][1]) == 0:
-                            candidate.parents.append((package.name,package.version))
+                            candidate.parents.append((package.name, package.version))
                     elif dependency[0][2] == '>=':
                         if apt_pkg.version_compare(candidate.version, dependency[0][1]) >= 0:
-                            candidate.parents.append((package.name,package.version))
+                            candidate.parents.append((package.name, package.version))
                     elif dependency[0][2] == '<=':
                         if apt_pkg.version_compare(candidate.version, dependency[0][1]) <= 0:
-                            candidate.parents.append((package.name,package.version))
+                            candidate.parents.append((package.name, package.version))
                     else:
-                            candidate.parents.append((package.name,package.version))
+                            candidate.parents.append((package.name, package.version))
 
     return result
 
@@ -264,7 +264,6 @@ if __name__ == "__main__":
         del inst
 
         get_dependencies(pkgname, depends, informations, cache)
-
 
     if arguments.list_dependencies:
         if arguments.raw_output:
