@@ -103,18 +103,15 @@ def update_deps(cache, informations):
 
 
 def check_if_newer(package, package_list):
-    latest_package = None
+    latest_package = False
 
     for candidate in package_list:
         if candidate.name == package.name:
             if latest_package:
-                if apt_pkg.version_compare(candidate.version, latest_package.version):
+                if apt_pkg.version_compare(candidate.version, latest_package.version) > 0:
                     latest_package = candidate
-            if apt_pkg.version_compare(candidate.version, package.version):
+            if apt_pkg.version_compare(candidate.version, package.version) > 0:
                 latest_package = candidate
-
-    if latest_package is None:
-        return False
 
     return latest_package
 
@@ -124,7 +121,9 @@ def check_and_remove(package_list, cache):
     for package in working_set:
         to_remove = False
         latest = check_if_newer(package, package_list)
-        if latest:
+        if latest and len(package.parents) == 0:
+            to_remove = True
+        elif latest:
             for parent in package.parents:
                 for candidate in package_list:
                     if candidate.name == parent[0] and candidate.version == parent[1]:
@@ -140,7 +139,8 @@ def check_and_remove(package_list, cache):
                                     if apt_pkg.version_compare(latest.version, parent_dep[0][1]) <= 0:
                                         to_remove = True
                                 else:
-                                    print("WARNING: Potential old dependencies still required : " + package.name)
+                                    to_remove = True
+#                                    print("WARNING: Potential old dependencies still required : " + package.name + " : " + package.version)
 
         if to_remove:
             print("Removing old dep : " + package.filename)
@@ -255,6 +255,7 @@ if __name__ == "__main__":
             pkgname = inst.pkgname
             depends = inst.depends
             del inst
+            informations['required_dep'].add(pkgname)
 
             get_dependencies(pkgname, depends, informations, cache)
     else:
