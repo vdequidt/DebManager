@@ -8,6 +8,7 @@ import glob
 import re
 import sys
 import subprocess
+import networkx as nx
 from package import Package
 
 apt_pkg.init_system()
@@ -177,6 +178,29 @@ def build_package_list(cache):
     return result
 
 
+def build_package_graph(package_list):
+    graph = nx.DiGraph()
+
+    for package in package_list:
+        for dependency in package.dependencies:
+            for candidate in package_list:
+                if candidate.name == dependency[0][0]:
+                    if dependency[0][2] == '=':
+                        if apt_pkg.version_compare(candidate.version, dependency[0][1]) == 0:
+                            graph.add_edge(package, candidate)
+                    elif dependency[0][2] == '>=':
+                        if apt_pkg.version_compare(candidate.version, dependency[0][1]) >= 0:
+                            graph.add_edge(package, candidate)
+                    elif dependency[0][2] == '<=':
+                        if apt_pkg.version_compare(candidate.version, dependency[0][1]) <= 0:
+                            graph.add_edge(package, candidate)
+                    else:
+                            graph.add_edge(package, candidate)
+
+    return graph
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Repository updater")
 
@@ -217,6 +241,21 @@ if __name__ == "__main__":
                         action="store_true",
                         default=False,
                         help="Update everything in the current directory.")
+
+    parser.add_argument("--build-graph",
+                        action="store_true",
+                        default=False,
+                        help="Build graph and save it to graph.ps.")
+
+    parser.add_argument("--graph-type",
+                        action="store",
+                        type=str,
+                        help="Build graph and save it to graph.ps.")
+
+    parser.add_argument("--graph-output",
+                        action="store",
+                        type=str,
+                        help="Build graph and save it to graph.ps.")
 
     arguments = parser.parse_args()
 
@@ -309,3 +348,15 @@ if __name__ == "__main__":
             download_missing_deps(missing_package, cache, informations)
         all_packages = build_package_list(cache)
         check_and_remove(all_packages, cache)
+
+    if arguments.build_graph:
+        graph = build_package_graph(all_packages)
+        draw = nx.to_agraph(graph)
+        if arguments.graph_type:
+            draw.layout(prog=arguments.graph_type)
+        else:
+            draw.layout(prog='dot')
+        if arguments.graph_output:
+            draw.draw(arguments.graph_output)
+        else:
+            draw.draw('default.ps')
