@@ -67,7 +67,7 @@ def download_missing_deps(missing_package, cache, informations):
     elif cache.has_key(missing_package):
         uri = cache[missing_package].candidate.uri
 
-        print("Downloading '" + missing_package + "' :")
+        print("Downloading '" + missing_package + "' in version " + cache[missing_package].candidate.version + " :")
         subprocess.call(["curl", "-O", "-#", uri])
 
         filename = uri.split("/")[-1]
@@ -96,7 +96,7 @@ def update_deps(cache, informations):
                 status = package.compare_to_version_in_cache(use_installed=False)
                 if status == 1:
                     uri = cache[package.pkgname].candidate.uri
-                    print("Updating '" + package.pkgname + "' :")
+                    print("Updating '" + package.pkgname + "' from " + re.findall('_(.*)_', filename)[0] + " to " + cache[package.pkgname].candidate.version + " :")
                     subprocess.call(["curl", "-O", "-#", uri])
             else:
                 print("Package '" + package.pkgname + "' not found in cache.")
