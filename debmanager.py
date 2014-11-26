@@ -173,141 +173,44 @@ class DebManager(object):
             print("Package '" + missing_package + "' not found in cache.")
             return False
 
-
-def cmp_deb_version(x, y):
-        x = re.findall('_(.*)_', x)
-        y = re.findall('_(.*)_', y)
-        return apt_pkg.version_compare(x[0], y[0])
-
-
-def sort_file_list(file_list):
-    file_list_tmp = list(file_list)
-
-    for i in range(len(file_list_tmp)):
-        index_min = i
-        k = 0
-
-        for j in range(i, len(file_list_tmp)):
-            l = cmp_deb_version(file_list_tmp[index_min], file_list_tmp[j])
-            if l < k:
-                index_min = file_list_tmp.index(file_list_tmp[j])
-                k = l
-
-        if index_min != i:
-            tmp = file_list_tmp[i]
-            file_list_tmp[i] = file_list_tmp[index_min]
-            file_list_tmp[index_min] = tmp
-
-    return file_list_tmp
-
-
-def get_dependencies(package_name, dependencies, informations, cache):
-
-    for dependence in dependencies:
-        dependence_name = dependence[0][0]
-        if dependence_name in informations['required_dep']:
-            continue
-        else:
-            filename = glob.glob("./{}_*.deb".format(dependence_name))
-            if len(filename) > 1:
-                filename = sort_file_list(filename)
-            if len(filename) > 0:
-                filename = filename[0]
-                package = apt.debfile.DebPackage(filename, cache)
-                informations['required_dep'].add(dependence_name)
-                get_dependencies(package.pkgname, package.depends, informations, cache)
-            else:
-                informations['missing_dep'].setdefault(dependence_name, []).append(package_name)
-                continue
-
-
-def download_missing_deps(missing_package, cache, informations):
-
-    if cache.is_virtual_package(missing_package):
-        print("Package '" + missing_package + "' is virtual.")
-    elif cache.has_key(missing_package):
-        uri = cache[missing_package].candidate.uri
-
-        print("Downloading '" + missing_package + "' in version " + cache[missing_package].candidate.version + " :")
-        subprocess.call(["curl", "-O", "-#", uri])
-
-        filename = uri.split("/")[-1]
-
-        package = apt.debfile.DebPackage(filename, cache)
-
-        informations['required_dep'].add(missing_package)
-
-        for dep in package.depends:
-            dep = dep[0][0]
-            if dep not in informations['required_dep']:
-                download_missing_deps(dep, cache, informations)
-    else:
-        print("Package '" + missing_package + "' not found in cache.")
-
-
-def update_deps(cache, informations):
-    for dependence_name in informations['required_dep']:
-        filename = glob.glob("./{}_*.deb".format(dependence_name))
-        if len(filename) > 1:
-            filename = sort_file_list(filename)
-        if len(filename) > 0:
-            filename = filename[0]
-            package = apt.debfile.DebPackage(filename, cache)
-            if cache.has_key(package.pkgname):
-                status = package.compare_to_version_in_cache(use_installed=False)
-                if status == 1:
-                    uri = cache[package.pkgname].candidate.uri
-                    print("Updating '" + package.pkgname + "' from " + re.findall('_(.*)_', filename)[0] + " to " + cache[package.pkgname].candidate.version + " :")
-                    subprocess.call(["curl", "-O", "-#", uri])
-            else:
-                print("Package '" + package.pkgname + "' not found in cache.")
-
-
-def check_if_newer(package, package_list):
-    latest_package = False
-
-    for candidate in package_list:
-        if candidate.name == package.name:
-            if latest_package:
-                if apt_pkg.version_compare(candidate.version, latest_package.version) > 0:
-                    latest_package = candidate
-            if apt_pkg.version_compare(candidate.version, package.version) > 0:
-                latest_package = candidate
-
-    return latest_package
-
-
-def check_and_remove(package_list, cache):
-    working_set = set(package_list)
-    for package in working_set:
-        to_remove = False
-        latest = check_if_newer(package, package_list)
-        if latest and len(package.parents) == 0:
-            to_remove = True
-        elif latest:
-            for parent in package.parents:
-                for candidate in package_list:
-                    if candidate.name == parent[0] and candidate.version == parent[1]:
-                        for parent_dep in candidate.dependencies:
-                            if parent_dep[0][0] == package.name:
-                                if parent_dep[0][2] == '=':
-                                    if apt_pkg.version_compare(latest.version, parent_dep[0][1]) == 0:
+    def cleanup_old_packages(self):
+        working_set = set(self.packages)
+        for package in working_set:
+            to_remove = False
+            latest = None
+            for other_package in working_set:
+                if package.name == other_package.name:
+                    if latest:
+                        if apt_pkg.version_compare(other_package.version, latest.version) > 0:
+                            latest = other_package
+                    elif apt_pkg.version_compare(other_package.version, package.version) > 0:
+                        latest = other_package
+            if latest and len(package.parents) == 0:
+                to_remove = True
+            elif latest:
+                for parent in package.parents:
+                    for candidate in self.packages:
+                        if candidate.name == parent[0] and candidate.version == parent[1]:
+                            for parent_dep in candidate.dependencies:
+                                if parent_dep[0][0] == package.name:
+                                    if parent_dep[0][2] == '=':
+                                        if apt_pkg.version_compare(latest.version, parent_dep[0][1]) == 0:
+                                            to_remove = True
+                                    elif parent_dep[0][2] == '>=':
+                                        if apt_pkg.version_compare(latest.version, parent_dep[0][1]) >= 0:
+                                            to_remove = True
+                                    elif parent_dep[0][2] == '<=':
+                                        if apt_pkg.version_compare(latest.version, parent_dep[0][1]) <= 0:
+                                            to_remove = True
+                                    elif parent_dep[0][2] == '':
                                         to_remove = True
-                                elif parent_dep[0][2] == '>=':
-                                    if apt_pkg.version_compare(latest.version, parent_dep[0][1]) >= 0:
-                                        to_remove = True
-                                elif parent_dep[0][2] == '<=':
-                                    if apt_pkg.version_compare(latest.version, parent_dep[0][1]) <= 0:
-                                        to_remove = True
-                                elif parent_dep[0][2] == '':
-                                    to_remove = True
-                                else:
-                                    print(package.name + "_" + package.version + " has been kept back because of " + parent[0])
+                                    else:
+                                        print(package.name + "_" + package.version + " has been kept back because of " + parent[0])
 
-        if to_remove:
-            print("Removing old dep : " + package.filename)
-            subprocess.call(["rm", package.filename])
-            package_list.remove(package)
+            if to_remove:
+                print("Removing old dep : " + package.filename)
+                subprocess.call(["rm", package.filename])
+                self.packages.remove(package)
 
 
 if __name__ == "__main__":
@@ -363,7 +266,6 @@ if __name__ == "__main__":
     dm = DebManager()
 
     dm.build_package_list()
-
 
     if arguments.update_everything:
         dm.update_dependencies()
