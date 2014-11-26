@@ -12,6 +12,148 @@ from package import Package
 
 apt_pkg.init_system()
 
+class DebManager(object):
+
+    def __init__(self, cache_dir="./", deb_dir="./"):
+
+        self.cache = apt.Cache(cache_dir=cache_dir+"cache")
+        self.deb_dir = deb_dir
+        self.packages = set()
+        self.top_level_packages = set()
+        self.status = dict()
+        self.status['required_dep'] = set()
+        self.status['missing_dep'] = dict()
+
+
+    def update_cache(self):
+        print("Updating apt cache...")
+
+        self.cache.update()
+        self.cache.open()
+
+        print("DONE!")
+
+
+    def build_package_list(self):
+        package_list = glob.glob(self.deb_dir + "/*.deb") # TODO use os.path
+        self.packages = set()
+        for package in package_list:
+            name, version = re.findall('.*/(.*)_(.*)_', package)[0]
+            debfile = apt.debfile.DebPackage(package, self.cache)
+            self.packages.add(Package(debfile.pkgname,
+                                      version,
+                                      package,
+                                      dependencies=debfile.depends))
+        for package in self.packages:
+            for dependency in package.dependencies:
+                for candidate in self.packages:
+                    if candidate.name == dependency[0][0]:
+                        if dependency[0][2] == '=':
+                            if apt_pkg.version_compare(candidate.version, dependency[0][1]) == 0:
+                                candidate.parents.append((package.name, package.version))
+                        elif dependency[0][2] == '>=':
+                            if apt_pkg.version_compare(candidate.version, dependency[0][1]) >= 0:
+                                candidate.parents.append((package.name, package.version))
+                        elif dependency[0][2] == '<=':
+                            if apt_pkg.version_compare(candidate.version, dependency[0][1]) <= 0:
+                                candidate.parents.append((package.name, package.version))
+                        elif dependency[0][2] == '':
+                            candidate.parents.append((package.name, package.version))
+
+        self.top_level_packages = set()
+        for package in self.packages:
+            if len(package.parents) == 0:
+                self.top_level_packages.add(package.filename)
+
+        self.top_level_packages = sorted(list(self.top_level_packages))
+
+
+    def update_dependencies(self, filename=None):
+        # TODO : feed the update with a file containing packages, and only
+        #        download top level packages
+        if filename:
+            with open(filename, 'r') as f:
+                packages_list = f.read().split("\n")
+                packages_list.pop()
+            self._get_missing_packages(packages_list)
+            self.build_package_list()
+
+        packages_to_update = self.top_level_packages
+
+        for deb_filename in packages_to_update:
+            debfile = apt.debfile.DebPackage(deb_filename, self.cache)
+
+            self._recursive_update(debfile.depends)
+
+        self._refresh_parents()
+
+    def _recursive_update(self, dependencies):
+        packages_list = list()
+        for candidate in self.packages:
+            packages_list.append(candidate.name)
+
+        for dependency in dependencies:
+            # If not present, download and recurse
+            if dependency[0][0] not in packages_list:
+                filename = self._download_single_deb(dependency[0][0])
+                if filename:
+                    version = re.findall('.*_(.*)_', filename)[0]
+                    debfile = apt.debfile.DebPackage(self.deb + filename, self.cache)
+                    self.packages.add(Package(debfile.pkgname,
+                                              version,
+                                              self.deb + filename,
+                                              dependencies=debfile.depends))
+                    self._recursive_update(debfile.depends)
+            # If present, update and recurse
+            else:
+                for package in self.packages:
+                    if package.name == dependency[0][0]:
+                        if self.cache.has_key(package.name):
+                            debfile = apt.debfile.DebPackage(package.filename, self.cache)
+                            status = package.compare_to_version_in_cache(use_installed=False)
+                            if status == 1:
+                                uri = self.cache[package.name].candidate.uri
+                                print("Updating '" + package.name + "' from " + package.version + " to " + self.cache[package.name].candidate.version + " :")
+                                subprocess.call(["curl", "-O", "-#", uri])
+                                filename = uri.split("/")[-1]
+                                updated_debfile = apt.debfile.DebPackage(filename, self.cache)
+                                package.version = self.cache[package.name].candidate.version
+                                package.dependencies = updated_debfile.depends
+                                package.filename = filename
+                                self._recursive_update(updated_debfile.depends)
+                        else:
+                            print("Package '" + package.name + "' not found in cache.")
+
+
+    def _get_missing_packages(self, package_list):
+        deb_list = glob.glob(self.deb_dir + "/*.deb") # TODO use os.path
+
+        for deb_file in deb_list:
+            name, version = re.findall('.*/(.*)_(.*)_', deb_file)[0]
+            if name in package_list:
+                package_list.remove(name)
+
+        for package in package_list:
+            self._download_single_deb(package)
+
+
+    def _download_single_deb(self, package_name):
+        if self.cache.is_virtual_package(package_name):
+            print("Package '" + package_name + "' is virtual.")
+            return False
+        elif self.cache.has_key(package_name):
+            uri = self.cache[package_name].candidate.uri
+
+            print("Downloading '" + package_name + "' in version " + self.cache[package_name].candidate.version + " :")
+
+            subprocess.call(["curl", "-O", "-#", uri])
+
+            return uri.split("/")[-1]
+        else:
+            print("Package '" + missing_package + "' not found in cache.")
+            return False
+
+
 
 def cmp_deb_version(x, y):
         x = re.findall('_(.*)_', x)
@@ -138,43 +280,15 @@ def check_and_remove(package_list, cache):
                                 elif parent_dep[0][2] == '<=':
                                     if apt_pkg.version_compare(latest.version, parent_dep[0][1]) <= 0:
                                         to_remove = True
-                                else:
+                                elif parent_dep[0][2] == '':
                                     to_remove = True
-#                                    print("WARNING: Potential old dependencies still required : " + package.name + " : " + package.version)
+                                else:
+                                    print(package.name + "_" + package.version + " has been kept back because of " + parent[0])
 
         if to_remove:
             print("Removing old dep : " + package.filename)
             subprocess.call(["rm", package.filename])
             package_list.remove(package)
-
-
-def build_package_list(cache):
-    package_list = glob.glob("./*.deb")
-    result = set()
-    for package in package_list:
-        name, version = re.findall('.*/(.*)_(.*)_', package)[0]
-        debfile = apt.debfile.DebPackage(package, cache)
-        result.add(Package(debfile.pkgname,
-                           version,
-                           package,
-                           dependencies=debfile.depends))
-    for package in result:
-        for dependency in package.dependencies:
-            for candidate in result:
-                if candidate.name == dependency[0][0]:
-                    if dependency[0][2] == '=':
-                        if apt_pkg.version_compare(candidate.version, dependency[0][1]) == 0:
-                            candidate.parents.append((package.name, package.version))
-                    elif dependency[0][2] == '>=':
-                        if apt_pkg.version_compare(candidate.version, dependency[0][1]) >= 0:
-                            candidate.parents.append((package.name, package.version))
-                    elif dependency[0][2] == '<=':
-                        if apt_pkg.version_compare(candidate.version, dependency[0][1]) <= 0:
-                            candidate.parents.append((package.name, package.version))
-                    else:
-                            candidate.parents.append((package.name, package.version))
-
-    return result
 
 
 if __name__ == "__main__":
@@ -227,37 +341,13 @@ if __name__ == "__main__":
     if arguments.raw_output and arguments.list_dependencies and arguments.list_missing:
         sys.exit("Can't raw output both missing and present dependencies in repository.")
 
-    print("Updating apt cache...")
-    cache = apt.Cache(rootdir="./cache")
+    dm = debmanager.DebManager()
 
-    cache.update()
+    dm.build_package_list()
 
-    cache.open()
-    print("DONE!")
-
-    all_packages = build_package_list(cache)
-
-    top_level_packages = set()
-
-    for package in all_packages:
-        if len(package.parents) == 0:
-            top_level_packages.add(package.filename)
-
-    top_level_packages = sorted(list(top_level_packages))
-
-    informations = dict()
-    informations['required_dep'] = set()
-    informations['missing_dep'] = dict()
 
     if arguments.update_everything:
-        for debfile in top_level_packages:
-            inst = apt.debfile.DebPackage(debfile, cache)
-            pkgname = inst.pkgname
-            depends = inst.depends
-            del inst
-            informations['required_dep'].add(pkgname)
-
-            get_dependencies(pkgname, depends, informations, cache)
+        dm.update_dependencies()
     else:
         inst = apt.debfile.DebPackage(arguments.deb_package, cache)
         pkgname = inst.pkgname
