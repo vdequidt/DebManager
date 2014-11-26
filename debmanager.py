@@ -6,7 +6,6 @@ import apt_pkg
 import argparse
 import glob
 import re
-import sys
 import subprocess
 from package import Package
 
@@ -170,7 +169,7 @@ class DebManager(object):
 
             return uri.split("/")[-1]
         else:
-            print("Package '" + missing_package + "' not found in cache.")
+            print("Package '" + package_name + "' not found in cache.")
             return False
 
     def cleanup_old_packages(self):
@@ -216,107 +215,26 @@ class DebManager(object):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Repository updater")
 
-    parser.add_argument("deb_package",
-                        type=str,
-                        help=".deb package.")
-
-    parser.add_argument("-m",
-                        "--list-missing",
-                        action="store_true",
-                        default=False,
-                        help="List missing dependencies for the given package.")
-
-    parser.add_argument("-d",
-                        "--list-dependencies",
-                        action="store_true",
-                        default=False,
-                        help=("List dependencies present in the repository "
-                              "for the given package."))
-
-    parser.add_argument("-a",
-                        action="store_true",
-                        default=False,
-                        help="Print all informations for the given package")
-
-    parser.add_argument("-r",
-                        "--raw-output",
-                        action="store_true",
-                        default=False,
-                        help="Create a raw output for dependencies.")
-
-    parser.add_argument("--download-missing",
-                        action="store_true",
-                        default=False,
-                        help="Download all missing dependencies for a given package.")
-
     parser.add_argument("--update-everything",
                         action="store_true",
                         default=False,
                         help="Update everything in the current directory.")
 
+    parser.add_argument("--cleanup",
+                        action="store_true",
+                        default=False,
+                        help="Cleanup old packages in the current directory.")
+
     arguments = parser.parse_args()
 
-    if arguments.a:
-        arguments.list_dependencies = True
-        arguments.list_missing = True
-
-    if arguments.raw_output and arguments.list_dependencies and arguments.list_missing:
-        sys.exit("Can't raw output both missing and present dependencies in repository.")
-
     dm = DebManager()
+
+    dm.update_cache()
 
     dm.build_package_list()
 
     if arguments.update_everything:
         dm.update_dependencies()
-    else:
-        inst = apt.debfile.DebPackage(arguments.deb_package, cache)
-        pkgname = inst.pkgname
-        depends = inst.depends
-        del inst
 
-        get_dependencies(pkgname, depends, informations, cache)
-
-    if arguments.list_dependencies:
-        if arguments.raw_output:
-            dep_str = ""
-            for dep in sorted(list(informations['required_dep'])):
-                dep_str += dep + " "
-            print(dep_str)
-        else:
-            print("\n'" + pkgname + "' need the following recursive dependencies :")
-            dep_str = "\t"
-            for dep in sorted(list(informations['required_dep'])):
-                if len(dep_str + dep) > 72:
-                    print(dep_str)
-                    dep_str = "\t"
-                dep_str += dep + " "
-            print(dep_str)
-
-    if arguments.list_missing:
-        if arguments.raw_output:
-            dep_str = ""
-            for dep, parents in informations['missing_dep'].items():
-                dep_str += dep + " "
-            print(dep_str)
-        else:
-            print("\n#########################################################")
-            print("######### MISSING DEPENDENCIES IN REPOSITORY ############")
-            print("#########################################################")
-
-            for dep, parents in informations['missing_dep'].items():
-                print("'" + dep + "' for package(s) :")
-                parent_str = "\t"
-                for parent in parents:
-                    if len(parent_str + parent) > 72:
-                        print(parent_str)
-                        parent_str = "\t"
-                    parent_str += parent + " "
-                print(parent_str)
-
-    if arguments.download_missing or arguments.update_everything:
-        update_deps(cache, informations)
-        for missing_package in informations['missing_dep']:
-            download_missing_deps(missing_package, cache, informations)
-        all_packages = build_package_list(cache)
-        check_and_remove(all_packages, cache)
+    if arguments.cleanup:
+        dm.cleanup_old_packages()
