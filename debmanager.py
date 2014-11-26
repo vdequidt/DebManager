@@ -89,9 +89,9 @@ class DebManager(object):
         self._refresh_parents()
 
     def _recursive_update(self, dependencies):
-        packages_list = list()
+        packages_list = set()
         for candidate in self.packages:
-            packages_list.append(candidate.name)
+            packages_list.add(candidate.name)
 
         for dependency in dependencies:
             # If not present, download and recurse
@@ -106,24 +106,37 @@ class DebManager(object):
                                               dependencies=debfile.depends))
                     self._recursive_update(debfile.depends)
             # If present, update and recurse
+            # Beware of multiple versions
             else:
+                working_set = set()
+                latest = None
                 for package in self.packages:
                     if package.name == dependency[0][0]:
                         if self.cache.has_key(package.name):
-                            debfile = apt.debfile.DebPackage(package.filename, self.cache)
-                            status = package.compare_to_version_in_cache(use_installed=False)
-                            if status == 1:
-                                uri = self.cache[package.name].candidate.uri
-                                print("Updating '" + package.name + "' from " + package.version + " to " + self.cache[package.name].candidate.version + " :")
-                                subprocess.call(["curl", "-O", "-#", uri])
-                                filename = uri.split("/")[-1]
-                                updated_debfile = apt.debfile.DebPackage(filename, self.cache)
-                                package.version = self.cache[package.name].candidate.version
-                                package.dependencies = updated_debfile.depends
-                                package.filename = filename
-                                self._recursive_update(updated_debfile.depends)
+                            working_set.add(package)
                         else:
                             print("Package '" + package.name + "' not found in cache.")
+                if len(working_set) > 0:
+                    for package in working_set:
+                        if latest is None:
+                            latest = package
+                        else:
+                            if apt_pkg.version_compare(package, latest) > 0:
+                                latest = package
+
+                    debfile = apt.debfile.DebPackage(latest.filename, self.cache)
+                    status = debfile.compare_to_version_in_cache(use_installed=False)
+                    if status == 1:
+                        uri = self.cache[latest.name].candidate.uri
+                        print("Updating '" + latest.name + "' from " + latest.version + " to " + self.cache[latest.name].candidate.version + " :")
+                        subprocess.call(["curl", "-O", "-#", uri])
+                        filename = uri.split("/")[-1]
+                        updated_debfile = apt.debfile.DebPackage(self.deb + filename, self.cache)
+                        self.packages.add(Package(updated_debfile.pkgname,
+                                                  self.cache[latest.name].candidate.version,
+                                                  self.deb + filename,
+                                                  dependencies=updated_debfile.depends))
+                        self._recursive_update(updated_debfile.depends)
 
     def _get_missing_packages(self, package_list):
         deb_list = glob.glob(self.deb_dir + "/*.deb")  # TODO use os.path
