@@ -152,6 +152,14 @@ class DebManager(object):
     def _download_single_deb(self, package_name):
         if self.cache.is_virtual_package(package_name):
             print("Package '" + package_name + "' is virtual.")
+            deps = self.cache.get_providing_packages(package_name)
+            for dep in deps:
+                uri = dep.candidate.uri
+                print("Downloading '" + package_name + "' in version " + dep.candidate.version + " for virtual package :")
+                subprocess.call(["curl", "-O", "-#", uri])
+                filename = uri.split("/")[-1]
+                debfile = apt.debfile.DebPackage(filename, self.cache)
+                self._recursive_update(debfile.depends)
             return False
         elif self.cache.has_key(package_name):
             uri = self.cache[package_name].candidate.uri
