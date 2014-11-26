@@ -15,9 +15,9 @@ apt_pkg.init_system()
 
 class DebManager(object):
 
-    def __init__(self, cache_dir="./", deb_dir="./"):
+    def __init__(self, cache_dir="./cache", deb_dir="./"):
 
-        self.cache = apt.Cache(cache_dir=cache_dir+"cache")
+        self.cache = apt.Cache(cache_dir=cache_dir)
         self.deb_dir = deb_dir
         self.packages = set()
         self.top_level_packages = set()
