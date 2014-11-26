@@ -12,6 +12,7 @@ from package import Package
 
 apt_pkg.init_system()
 
+
 class DebManager(object):
 
     def __init__(self, cache_dir="./", deb_dir="./"):
@@ -24,7 +25,6 @@ class DebManager(object):
         self.status['required_dep'] = set()
         self.status['missing_dep'] = dict()
 
-
     def update_cache(self):
         print("Updating apt cache...")
 
@@ -33,9 +33,8 @@ class DebManager(object):
 
         print("DONE!")
 
-
     def build_package_list(self):
-        package_list = glob.glob(self.deb_dir + "/*.deb") # TODO use os.path
+        package_list = glob.glob(self.deb_dir + "/*.deb")  # TODO use os.path
         self.packages = set()
         for package in package_list:
             name, version = re.findall('.*/(.*)_(.*)_', package)[0]
@@ -44,6 +43,16 @@ class DebManager(object):
                                       version,
                                       package,
                                       dependencies=debfile.depends))
+        self._refresh_parents()
+
+        self.top_level_packages = set()
+        for package in self.packages:
+            if len(package.parents) == 0:
+                self.top_level_packages.add(package.filename)
+
+        self.top_level_packages = sorted(list(self.top_level_packages))
+
+    def _refresh_parents(self):
         for package in self.packages:
             for dependency in package.dependencies:
                 for candidate in self.packages:
@@ -59,14 +68,6 @@ class DebManager(object):
                                 candidate.parents.append((package.name, package.version))
                         elif dependency[0][2] == '':
                             candidate.parents.append((package.name, package.version))
-
-        self.top_level_packages = set()
-        for package in self.packages:
-            if len(package.parents) == 0:
-                self.top_level_packages.add(package.filename)
-
-        self.top_level_packages = sorted(list(self.top_level_packages))
-
 
     def update_dependencies(self, filename=None):
         # TODO : feed the update with a file containing packages, and only
@@ -124,9 +125,8 @@ class DebManager(object):
                         else:
                             print("Package '" + package.name + "' not found in cache.")
 
-
     def _get_missing_packages(self, package_list):
-        deb_list = glob.glob(self.deb_dir + "/*.deb") # TODO use os.path
+        deb_list = glob.glob(self.deb_dir + "/*.deb")  # TODO use os.path
 
         for deb_file in deb_list:
             name, version = re.findall('.*/(.*)_(.*)_', deb_file)[0]
@@ -135,7 +135,6 @@ class DebManager(object):
 
         for package in package_list:
             self._download_single_deb(package)
-
 
     def _download_single_deb(self, package_name):
         if self.cache.is_virtual_package(package_name):
@@ -152,7 +151,6 @@ class DebManager(object):
         else:
             print("Package '" + missing_package + "' not found in cache.")
             return False
-
 
 
 def cmp_deb_version(x, y):
@@ -341,7 +339,7 @@ if __name__ == "__main__":
     if arguments.raw_output and arguments.list_dependencies and arguments.list_missing:
         sys.exit("Can't raw output both missing and present dependencies in repository.")
 
-    dm = debmanager.DebManager()
+    dm = DebManager()
 
     dm.build_package_list()
 
