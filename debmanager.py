@@ -16,7 +16,7 @@ class DebManager(object):
 
     def __init__(self, cache_dir="./cache", deb_dir="./"):
 
-        self.cache = apt.Cache(cache_dir=cache_dir)
+        self.cache = apt.cache.Cache(rootdir=cache_dir)
         self.deb_dir = deb_dir
         self.packages = set()
         self.top_level_packages = set()
@@ -98,10 +98,10 @@ class DebManager(object):
                 filename = self._download_single_deb(dependency[0][0])
                 if filename:
                     version = re.findall('.*_(.*)_', filename)[0]
-                    debfile = apt.debfile.DebPackage(self.deb + filename, self.cache)
+                    debfile = apt.debfile.DebPackage(self.deb_dir + filename, self.cache)
                     self.packages.add(Package(debfile.pkgname,
                                               version,
-                                              self.deb + filename,
+                                              self.deb_dir + filename,
                                               dependencies=debfile.depends))
                     self._recursive_update(debfile.depends)
             # If present, update and recurse
@@ -120,7 +120,7 @@ class DebManager(object):
                         if latest is None:
                             latest = package
                         else:
-                            if apt_pkg.version_compare(package, latest) > 0:
+                            if apt_pkg.version_compare(package.version, latest.version) > 0:
                                 latest = package
 
                     debfile = apt.debfile.DebPackage(latest.filename, self.cache)
@@ -130,10 +130,10 @@ class DebManager(object):
                         print("Updating '" + latest.name + "' from " + latest.version + " to " + self.cache[latest.name].candidate.version + " :")
                         subprocess.call(["curl", "-O", "-#", uri])
                         filename = uri.split("/")[-1]
-                        updated_debfile = apt.debfile.DebPackage(self.deb + filename, self.cache)
+                        updated_debfile = apt.debfile.DebPackage(self.deb_dir + filename, self.cache)
                         self.packages.add(Package(updated_debfile.pkgname,
                                                   self.cache[latest.name].candidate.version,
-                                                  self.deb + filename,
+                                                  self.deb_dir + filename,
                                                   dependencies=updated_debfile.depends))
                         self._recursive_update(updated_debfile.depends)
 
@@ -154,7 +154,7 @@ class DebManager(object):
             deps = self.cache.get_providing_packages(package_name)
             for dep in deps:
                 uri = dep.candidate.uri
-                print("Downloading '" + package_name + "' in version " + dep.candidate.version + " for virtual package :")
+                print("Downloading '" + dep.name + "' in version " + dep.candidate.version + " for virtual package :")
                 subprocess.call(["curl", "-O", "-#", uri])
                 filename = uri.split("/")[-1]
                 debfile = apt.debfile.DebPackage(filename, self.cache)
@@ -225,6 +225,11 @@ if __name__ == "__main__":
                         default=False,
                         help="Cleanup old packages in the current directory.")
 
+    parser.add_argument("--basefile",
+                        action="store",
+                        type=str,
+                        help="Update according to a file containing a list of packages.")
+
     arguments = parser.parse_args()
 
     dm = DebManager()
@@ -233,7 +238,9 @@ if __name__ == "__main__":
 
     dm.build_package_list()
 
-    if arguments.update_everything:
+    if arguments.basefile:
+        dm.update_dependencies(arguments.basefile)
+    elif arguments.update_everything:
         dm.update_dependencies()
 
     if arguments.cleanup:
