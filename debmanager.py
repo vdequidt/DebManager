@@ -83,6 +83,24 @@ class DebManager(object):
         for deb_filename in packages_to_update:
             debfile = apt.debfile.DebPackage(deb_filename, self.cache)
 
+            # TODO : Change this (dirty)
+
+            if self.cache.has_key(debfile.pkgname):
+                status = debfile.compare_to_version_in_cache(use_installed=False)
+                if status == 1:
+                    uri = self.cache[debfile.pkgname].candidate.uri
+                    print("Updating '" + debfile.pkgname + "' to " + self.cache[debfile.pkgname].candidate.version + " :")
+                    subprocess.call(["curl", "-O", "-#", uri])
+                    filename = uri.split("/")[-1]
+                    updated_debfile = apt.debfile.DebPackage(self.deb_dir + filename, self.cache)
+                    self.packages.add(Package(updated_debfile.pkgname,
+                                              self.cache[debfile.pkgname].candidate.version,
+                                              self.deb_dir + filename,
+                                              dependencies=updated_debfile.depends))
+            else:
+                print("Package '" + debfile.pkgname + "' not found in cache.")
+
+
             self._recursive_update(debfile.depends)
 
         self._refresh_parents()
