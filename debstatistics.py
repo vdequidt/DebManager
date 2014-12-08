@@ -50,7 +50,7 @@ class DebStatistics(object):
                 line += "\t"
             line += "install"
             if filename:
-                fd.write(line)
+                fd.write(line+"\n")
             else:
                 print(line)
         if filename:
