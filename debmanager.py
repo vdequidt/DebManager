@@ -8,6 +8,7 @@ import glob
 import re
 import subprocess
 from package import Package
+from debstatistics import DebStatistics
 
 apt_pkg.init_system()
 
@@ -248,6 +249,26 @@ if __name__ == "__main__":
                         type=str,
                         help="Update according to a file containing a list of packages.")
 
+    parser.add_argument("--selections",
+                        action="store_true",
+                        default=False,
+                        help="Create a selection of packages.")
+
+    parser.add_argument("--selections-file",
+                        action="store",
+                        type=str,
+                        help="Save a selection of packages in a file.")
+
+    parser.add_argument("--parents",
+                        action="store_true",
+                        default=False,
+                        help="Print packages without other parents.")
+
+    parser.add_argument("--raw",
+                        action="store_true",
+                        default=False,
+                        help="Raw output.")
+
     arguments = parser.parse_args()
 
     dm = DebManager()
@@ -263,3 +284,15 @@ if __name__ == "__main__":
 
     if arguments.cleanup:
         dm.cleanup_old_packages()
+
+    if arguments.parents or arguments.selections or arguments.selections_file:
+        dm.build_package_list()
+        ds = DebStatistics(dm.packages, dm.top_level_packages)
+
+        if arguments.parents:
+            ds.print_top_level_packages(arguments.raw)
+        if arguments.selections:
+            ds.print_packages_selection()
+        if arguments.selections_file:
+            ds.print_packages_selection(arguments.selections_file)
+
